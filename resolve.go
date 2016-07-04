@@ -53,7 +53,6 @@ func (c *counter) Visit(n ast.Node) ast.Visitor {
 	if n == nil {
 		return nil
 	}
-	fmt.Printf("%T\n%#v", n, n)
 	switch t := n.(type) {
 	case *ast.AssignStmt:
 		if t.Tok == token.DEFINE {
@@ -63,23 +62,23 @@ func (c *counter) Visit(n ast.Node) ast.Visitor {
 		*ast.SelectStmt, *ast.IfStmt, *ast.ForStmt:
 		return nil
 	}
-	fmt.Println(int(*c))
 	return c
 }
 
-// Endian returns the endianness of a field. It returns an error
-// if the field can't have a byte-ordering.
+// Endian returns the endianness of a field. TODO: return
+// an error if the field can't have an endian value.
 func Endian(m ast.Node) (string, error) {
 	switch t := m.(type) {
 	case *ast.Ident:
-		if t.Name == "BE" || t.Name == "LE" {
-			return t.Name, nil
+		switch t.Name{
+		case "BE": return "binary.BigEndian", nil
+		case "LE": return "binary.LittleEndian", nil
+		default:   return "", fmt.Errorf("invalid endian: %s", t.Name)
 		}
-		return "", fmt.Errorf("invalid endian: %s", t.Name)
 	case nil:
-		return "LE", nil
+		return "binary.LittleEndian", nil
 	}
-	return "LE", nil
+	return "binary.LittleEndian", nil
 }
 
 func (n *named) Visit(node ast.Node) ast.Visitor {
@@ -138,7 +137,6 @@ func WidthOf(ts *ast.TypeSpec, f *ast.Field) (s string, err error) {
 	}
 	info := TInfo.Get(ts, f)
 	if info == nil {
-		TInfo.Print()
 		return "", fmt.Errorf("field width is nil: %#v", f)
 	}
 	s = types.ExprString(info.Width)

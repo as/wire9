@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"io"
 	"text/template"
+
+	"log"
 )
 
 var (
@@ -12,7 +14,6 @@ var (
 	eWriteBinary = template.Must(template.New("tWriteBinary").Funcs(funcMap).Parse(tWriteBinary))
 	eReadBinary  = template.Must(template.New("tReadBinary").Funcs(funcMap).Parse(tReadBinary))
 )
-
 
 var Flags = map[string]bool{}
 
@@ -22,21 +23,40 @@ func WasSet(s string) bool {
 	return ok
 }
 
-func genTypes(w io.Writer, exprs ...*ast.TypeSpec) (err error) {
+func (p *parser) genTypes(w io.Writer, exprs ...*ast.TypeSpec) (err error) {
 	if !WasSet("tWriteString") {
 		w.Write([]byte(tWriteString))
 	}
-	for _, r := range exprs {
-		if err = gentype(w, r); err != nil {
+	for _, e := range exprs {
+		if id := p.DupMap[Dup{e.Name.Name, "StructType"}]; id != nil {
+			log.Printf("gen: skip already-defined struct: %s\n", id.Name)
+			fmt.Fprintf(w, "// type %s struct { //defined in other file", id.Name)
+			continue
+		}
+		if err = eStruct.Execute(w, e); err != nil {
 			return
 		}
 	}
 	return nil
 }
-func genFuncs(w io.Writer, exprs ...*ast.TypeSpec) (err error) {
-	for _, r := range exprs {
-		if err = genfunc(w, r); err != nil {
-			return
+
+func (p *parser) genFuncs(w io.Writer, exprs ...*ast.TypeSpec) (err error) {
+	for _, e := range exprs {
+		if id := p.DupMap[Dup{e.Name.Name, "ReadBinary"}]; id != nil {
+			log.Printf("gen: skip already-defined ReadBinary method for: %s\n", id.Name)
+			fmt.Fprintf(w, "// func (z %s) ReadBinary { // defined in other file}\n", id.Name)
+		} else {
+			if err = eReadBinary.Execute(w, e); err != nil {
+				return
+			}
+		}
+		if id := p.DupMap[Dup{e.Name.Name, "WriteBinary"}]; id != nil {
+			log.Printf("gen: skip already-defined WriteBinary method for: %s\n", id.Name)
+			fmt.Fprintf(w, "// func (z %s) WriteBinary { //  defined in other file\n", id.Name)
+		} else {
+			if err = eWriteBinary.Execute(w, e); err != nil {
+				return
+			}
 		}
 	}
 	return nil
@@ -46,6 +66,7 @@ func genFuncs(w io.Writer, exprs ...*ast.TypeSpec) (err error) {
 // Template functions
 
 var funcMap = template.FuncMap{
+	"bailout":      func() (int, error) { return 1, fmt.Errorf("bailout") },
 	"array":        Array,
 	"bytearray":    ByteArray,
 	"byteslice":    ByteSlice,
@@ -79,29 +100,9 @@ var funcMap = template.FuncMap{
 }
 
 //
-// Generator
-
-func gentype(w io.Writer, expr *ast.TypeSpec) (err error) {
-	return eStruct.Execute(w, expr)
-}
-func genfunc(w io.Writer, expr *ast.TypeSpec) (err error) {
-	if err = eReadBinary.Execute(w, expr); err != nil {
-		return
-	}
-	return eWriteBinary.Execute(w, expr)
-}
-
-//
 // Templates
 
 const tWriteString = `
-	var(
-		binread  = binary.Read
-		binwrite = binary.Write
-		LE     = binary.LittleEndian	
-		BE     = binary.BigEndian
-	)
-	
 	func writestring(w io.Writer, s string, must int) (err error) {
 		data := []byte(s)
 		switch l := len(data); {
@@ -149,16 +150,17 @@ const tReadBinary = `
 			{{with $nm  := $f | name}}{{with $typ := $f | typeof }}
 				{
 				{{- if $f.Type | looped }}
-                  z.{{$f | declaredname }} = make({{$typ}}, {{ ((width $st $f)) }})
-				  for i := 0; i < {{ ((width $st $f)) }}; i++ {
+                	z.{{$f | declaredname }} = make({{$typ}}, {{ ((width $st $f)) }})
+					for i := 0; i < {{ ((width $st $f)) }}; i++ {
                 {{else}}
-				{{ if $f.Type | alloc    }}  z.{{$f | name}} = make([]byte, {{ ((width $st $f)) }}) {{else}}
-				{{ if $f.Type | initial  }}    {{$f | name}} = {{$f | typeof}}{} {{else}}
-				{{ if $f.Type | maketmp  }}  tmp            := make([]byte, {{ ((width $st $f)) }}) {{end}}{{end}}{{end}}{{end}}
+					{{ if $f.Type | alloc    }}  z.{{$f | name}} = make([]byte, {{ ((width $st $f)) }}) {{else}}
+					{{ if $f.Type | initial  }}    {{$f | name}} = {{$f | typeof}}{} {{else}}
+					{{ if $f.Type | maketmp  }}  tmp := make([]byte, {{ ((width $st $f)) }}) {{end}}{{end}}{{end}}
+				{{end}}
 
 				{{ if $f.Type | normal	}}      if n, err := r.Read(z.{{$f | name}});       err != nil || n != {{ ((width $st $f)) }}  {return err}{{else}}
 				{{ if $f.Type | customslice }} if    err := z.{{$f | name}}.ReadBinary(r); err != nil { return err } {{else}}
-				{{ if $f.Type | binary	}}      if err :=    binread(r, {{$f | endian }}, z.{{$f | name}}); err != nil { return err } {{else}}
+				{{ if $f.Type | binary	}}      if err :=    binary.Read(r, {{$f | endian }}, &z.{{$f | name}}); err != nil { return err } {{else}}
 				{{ if $f.Type | literal	}}  if n, err := r.Read(tmp); err != nil || bytes.Compare(tmp, []byte({{$f | name}})) != 0 {
 						if err != nil { return return fmt.Errorf("z.%x: read %x instead", []byte({{$f | name}}, tmp)};
 						return err;
@@ -175,22 +177,54 @@ const tReadBinary = `
 const tWriteBinary = `
 {{ with $st := . }}
 {{ with $nm := .Name | printf "%s" }}
-	func (z {{$nm}}) WriteBinary(w io.Writer) (err error) {
+	func (z *{{$nm}}) WriteBinary(w io.Writer) (err error) {
 		defer func() { recover() }()
-		{{ range $i, $f := $st | fields}}
-			{{with $nm  := $f | name}}{{with $len :=  ((width $st $f)) }}{{with $typ := $f | typeof }}
-			{{- if $f.Type | looped }} for i := 0; i < {{ ((width $st $f)) }}; i++ { {{ end }}
+		{{- range $i, $f := $st | fields}}
+			{{with $nm  := $f | name}}{{with $typ := $f | typeof }}
 				{
-				{{- if $f.Type | customslice   }} if err := z.{{$f | name}}.WriteBinary(w); err != nil { return err } {{else}}
-				{{- if $f.Type | binary  }} if err := binwrite(w, {{$f | endian }}, z.{{$f | name}}); err != nil { return err } {{else}}
+				{{- if $f.Type | looped }}
+                  z.{{$f | declaredname }} = make({{$typ}}, {{ ((width $st $f)) }})
+				  for i := 0; i < {{ ((width $st $f)) }}; i++ {
+                {{else}}{{end}}
+
 				{{- if $f.Type | normal  }} x := {{ ((width $st $f)) }}; if n, err := w.Write(z.{{$f | name}}[:x]); err != nil || n != x  {return err}  {{else}} 
+				{{- if $f.Type | customslice   }} if err := z.{{$f | name}}.WriteBinary(w); err != nil { return err } {{else}}
+				{{- if $f.Type | binary  }} if err := binary.Write(w, {{$f | endian }}, z.{{$f | name}}); err != nil { return err } {{else}}
 				{{- if $f.Type | literal }} if n, err := w.Write([]byte({{$f | name}})); err != nil || n != len([]byte({{$f | name}})) {
 						if err != nil {
 							return return fmt.Errorf("z.%x: write %x instead", []byte({{$f | name}}, tmp)
 						}
 						return err
 					}{{else}} 
-				{{ if $f.Type | wired }} if    err := z.{{$f | name}}.ReadBinary(r); err != nil { return err } ;{{- end}}{{- end}}{{- end}}{{- end}}{{- end}}
+				{{ if $f.Type | wired }} if    err := z.{{$f | name}}.WriteBinary(w); err != nil { return err } ;
+				{{else}}{{ call bailout }}{{- end}}{{- end}}{{- end}}{{- end}}{{- end}}
+			{{- if $f.Type | unlooped }} } {{end}}{{end}}
+		{{- end}}
+				}{{end}}
+		return nil
+	}
+{{end}}
+{{end}}
+`
+const ztWriteBinary = `
+{{ with $st := . }}
+{{ with $nm := .Name | printf "%s" }}
+	func (z {{$nm}}) WriteBinary(w io.Writer) (err error) {
+		defer func() { recover() }()
+		{{ range $i, $f := $st | fields}}
+			{{with $nm  := $f | name}}{{with $len :=  ((width $st $f)) }}{{with $typ := $f | typeof }}
+			{{- if $f.Type | looped }} for i := 0; i < {{ ((width $st $f)) }}; i++ { {{ end }}
+				{
+				{{- if $f.Type | normal  }} x := {{ ((width $st $f)) }}; if n, err := w.Write(z.{{$f | name}}[:x]); err != nil || n != x  {return err}  {{else}} 
+				{{- if $f.Type | customslice   }} if err := z.{{$f | name}}.WriteBinary(w); err != nil { return err } {{else}}
+				{{- if $f.Type | binary  }} if err := binary.Write(w, {{$f | endian }}, z.{{$f | name}}); err != nil { return err } {{else}}
+				{{- if $f.Type | literal }} if n, err := w.Write([]byte({{$f | name}})); err != nil || n != len([]byte({{$f | name}})) {
+						if err != nil {
+							return return fmt.Errorf("z.%x: write %x instead", []byte({{$f | name}}, tmp)
+						}
+						return err
+					}{{else}} 
+				{{ if $f.Type | wired }} if    err := z.{{$f | name}}.WriteBinary(w); err != nil { return err } ;{{- end}}{{- end}}{{- end}}{{- end}}{{- end}}
 				}
 			{{ if $f.Type | unlooped }} }{{ end }}
 		{{end}}{{end}}{{end}}

@@ -1,0 +1,13 @@
+package main
+
+import "fmt"
+import "runtime"
+
+type Some struct {
+	name string
+}
+
+func main() {
+	fmt.Println("hello world")
+	runtime.Gosched()
+}

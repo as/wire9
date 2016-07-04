@@ -1,0 +1,1 @@
+wire9 -z  str.go && echo ok

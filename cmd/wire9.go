@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"go/ast"
 	"log"
 	"os"
 
@@ -36,71 +35,20 @@ func main() {
 	dopackage(a[0])
 }
 
-type visitor struct {
-	*wire9.TypeInfo
-	last ast.Node
-}
-
-func (v *visitor) Visit(n ast.Node) ast.Visitor {
-	switch t := n.(type) {
-	case *ast.Package, *ast.TypeSpec, *ast.FuncDecl, *ast.File:
-		return v
-	case *ast.Ident:
-		switch l := v.last.(type) {
-		case *ast.FuncDecl:
-			fmt.Println(l.Name)
-		}
-	}
-	return nil
-}
-
-func Trace(n ast.Node) {
-	ast.Walk(&visitor{wire9.TInfo, nil})
-}
-
 func dopackage(dir string) {
 	pkg, err := wire9.OpenPackage(dir, false)
 	no(err)
 
-	for k, v := range pkg.Info.Types {
-		fmt.Println(k, v)
-	}
-
-	Trace(pkg)
-
 	wire, err := wire9.FromPackage(pkg, !*nofmt)
 	no(err)
-
 	var out *os.File
 	if *filename == "" {
 		out = os.Stdout
 	} else {
-		fd, err := os.OpenFile(*filename, os.O_WRONLY, 0644)
+		fd, err := os.Create(*filename)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer fd.Close()
-		out = fd
-	}
-
-	_, err = fmt.Fprintf(out, "%s\n%s", message, wire.Data)
-	no(err)
-}
-
-func dopackage2(dir string) {
-	pkg, err := wire9.OpenPackage(dir, true)
-	no(err)
-
-	wire, err := wire9.FromPackage(pkg, !*nofmt)
-	no(err)
-
-	var out *os.File
-	if *filename == "" {
-		out = os.Stdout
-	} else {
-		fd, err := os.OpenFile(*filename, os.O_WRONLY, 0644)
-		no(err)
-
 		defer fd.Close()
 		out = fd
 	}

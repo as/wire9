@@ -50,18 +50,163 @@ type parser struct {
 	exprLev int  // < 0: in control clause, >= 0: in expression
 	inRHS   bool // if set, the parser is parsing a rhs expression
 
+	DupMap    DupMap
+	intDupMap DupMap
 }
 
 // NewParser returns an initialized parser.
-func NewParser(fset *token.FileSet, line string) (p *parser, err error) {
+func NewParser(fset *token.FileSet, line string, dups DupMap) (p *parser, err error) {
 	if !strings.HasPrefix(line, "//wire9") {
 		return nil, fmt.Errorf("not a comment")
 	}
 	line = line[7:]
 	fset = token.NewFileSet()
-	p = &parser{}
+	p = &parser{
+		DupMap: make(DupMap),
+		intDupMap: make(DupMap),
+	}
+	if dups != nil{
+		p.DupMap = dups
+	}
 	p.init(fset, "none", []byte(line), AllErrors)
 	return p, nil
+}
+
+func (p *parser) parseDefinition() *ast.TypeSpec {
+	if p.trace {
+		defer un(trace(p, "Definition"))
+	}
+	p.openScope()
+	defer p.closeScope()
+	name := p.parseStructName()
+	if name == nil {
+		p.error(p.pos, "struct missing name")
+		return nil
+	}
+	S := &ast.TypeSpec{
+		Name: name,
+		Type: &ast.StructType{Fields: &ast.FieldList{List: make([]*ast.Field, 0)}},
+	}
+	fp := S.Type.(*ast.StructType).Fields
+	for p.tok != token.SEMICOLON && p.tok != token.EOF {
+		f, i := p.parseWireField()
+
+		fp.List = append(fp.List, f)
+		TInfo.Add(S, f, i)
+	}
+	if fp.List == nil {
+		p.error(p.pos, "empty field list")
+		return nil
+	}
+	p.expectSemi()
+
+	return S
+}
+
+func (p *parser) parseWireField() (*ast.Field, *Info) {
+	if p.trace {
+		defer un(trace(p, "WireField"))
+	}
+	name := p.parseIdent()
+	p.expect(token.LBRACK)
+	p.exprLev++
+	defer func() { p.exprLev-- }()
+
+	var flag WidthFlag
+	width := p.parseWireWidth()
+	if width != nil {
+		switch width.(type) {
+		case *ast.BasicLit:
+			flag |= WidthLit
+		case *ast.Ident, *ast.BinaryExpr:
+			flag |= WidthVar
+		default:
+			panic("parseWireField " + fmt.Sprintf("%T", width))
+		}
+	}
+
+	typ := p.parseWireType()
+	if width == nil && typ == nil {
+		p.error(p.pos, "width and type cannot both be empty")
+		return nil, nil
+	}
+	if typ == nil {
+		// check if 1,2,4,8, otherwise []byte
+		if p.trace {
+			un(trace(p, "TypeFromWidth"))
+		}
+		t, err := TypeFromWidth(width)
+		if err != nil {
+			p.error(p.pos, err.Error())
+			return nil, nil
+		}
+		typ = t
+	}
+	if typ == nil {
+		p.error(p.pos, "cant determine type")
+		return nil, nil
+	}
+	endian := p.parseWireEndian()
+	p.expect(token.RBRACK)
+	return &ast.Field{Names: []*ast.Ident{name}, Type: typ},
+		&Info{Width: width, Endian: endian, Flag: flag}
+}
+
+func (p *parser) tryConsumeComma() bool {
+	if p.trace {
+		defer un(trace(p, "tryConsumeComma"))
+	}
+	if p.tok == token.COMMA {
+		p.next()
+		return true
+	}
+	return false
+}
+
+func (p *parser) parseWireWidth() (x ast.Expr) {
+	if p.trace {
+		defer un(trace(p, "WireWidth"))
+	}
+	if p.tok != token.COMMA {
+		x = p.parseExpr(false)
+	}
+	p.tryConsumeComma()
+	return x
+}
+
+func (p *parser) parseWireType() (x ast.Expr) {
+	if p.trace {
+		defer un(trace(p, "WireType"))
+	}
+	defer p.tryConsumeComma()
+	if p.tok == token.COMMA || p.tok == token.RBRACK {
+		return nil
+	}
+	return p.tryIdentOrInt()
+}
+
+func (p *parser) parseWireEndian() binary.ByteOrder {
+	if p.trace {
+		defer un(trace(p, "WireEndian"))
+	}
+	defer p.tryConsumeComma()
+	if p.tok == token.COMMA || p.tok == token.RBRACK {
+		return nil
+	}
+	x := p.parseIdent()
+	switch {
+	case x == nil:
+		p.error(p.pos, fmt.Sprintf("endian set to empty string"))
+		return nil
+	case x.Name == "BE":
+		return binary.BigEndian
+	case x.Name == "LE":
+		return binary.LittleEndian
+	case x.Name == "":
+		return binary.LittleEndian
+	}
+	p.error(p.pos, fmt.Sprintf(`endian must be "LE" or "BE got %s"`, x.Name))
+	return nil
 }
 
 // next advances to the next token.
@@ -267,7 +412,7 @@ func (p *parser) init(fset *token.FileSet, filename string, src []byte, mode Mod
 	p.scanner.Init(p.file, src, eh, m)
 
 	p.mode = mode
-	p.trace = mode&Trace != 1 // for convenience (p.trace is used frequently)
+	p.trace = mode&Trace != 0 // for convenience (p.trace is used frequently)
 	p.next()
 }
 
@@ -577,145 +722,4 @@ func (p *parser) openScope() {
 }
 func (p *parser) closeScope() {
 	p.topScope = p.topScope.Outer
-}
-func (p *parser) parseDefinition() *ast.TypeSpec {
-	if p.trace {
-		defer un(trace(p, "Definition"))
-	}
-	p.openScope()
-	defer p.closeScope()
-	name := p.parseStructName()
-	if name == nil {
-		p.error(p.pos, "struct missing name")
-		return nil
-	}
-	S := &ast.TypeSpec{
-		Name: name,
-		Type: &ast.StructType{Fields: &ast.FieldList{List: make([]*ast.Field, 0)}},
-	}
-	if name, info := S.Name.Name, TInfo.Get(S, nil); info != nil {
-		if !info.FromGoSource {
-			p.error(p.pos, fmt.Sprintf("duplicate wire definition: %s", name))
-			return nil
-		}
-		defer p.checkOldStruct(name, TInfo.NamedStruct(name))
-	}
-	fp := S.Type.(*ast.StructType).Fields
-	for p.tok != token.SEMICOLON && p.tok != token.EOF {
-		f, i := p.parseWireField()
-
-		fp.List = append(fp.List, f)
-		TInfo.Add(S, f, i)
-	}
-	if fp.List == nil {
-		p.error(p.pos, "empty field list")
-		return nil
-	}
-	p.expectSemi()
-
-	return S
-}
-
-func (p *parser) parseWireField() (*ast.Field, *Info) {
-	if p.trace {
-		defer un(trace(p, "WireField"))
-	}
-	name := p.parseIdent()
-	p.expect(token.LBRACK)
-	p.exprLev++
-	defer func() { p.exprLev-- }()
-
-	var flag WidthFlag
-	width := p.parseWireWidth()
-	if width != nil {
-		switch width.(type) {
-		case *ast.BasicLit:
-			flag |= WidthLit
-		case *ast.Ident, *ast.BinaryExpr:
-			flag |= WidthVar
-		default:
-			panic("parseWireField " + fmt.Sprintf("%T", width))
-		}
-	}
-
-	typ := p.parseWireType()
-	if width == nil && typ == nil {
-		p.error(p.pos, "width and type cannot both be empty")
-		return nil, nil
-	}
-	if typ == nil {
-		// check if 1,2,4,8, otherwise []byte
-		if p.trace {
-			un(trace(p, "TypeFromWidth"))
-		}
-		t, err := TypeFromWidth(width)
-		if err != nil {
-			p.error(p.pos, err.Error())
-			return nil, nil
-		}
-		typ = t
-	}
-	if typ == nil {
-		p.error(p.pos, "cant determine type")
-		return nil, nil
-	}
-	endian := p.parseWireEndian()
-	p.expect(token.RBRACK)
-	return &ast.Field{Names: []*ast.Ident{name}, Type: typ},
-		&Info{Width: width, Endian: endian, Flag: flag}
-}
-
-func (p *parser) tryConsumeComma() bool {
-	un(trace(p, fmt.Sprintf("tryConsumeComma: token %q", p.tok)))
-	if p.tok == token.COMMA {
-		p.next()
-		return true
-	}
-	return false
-}
-
-func (p *parser) parseWireWidth() (x ast.Expr) {
-	if p.trace {
-		defer un(trace(p, "WireWidth"))
-	}
-	if p.tok != token.COMMA {
-		x = p.parseExpr(false)
-	}
-	p.tryConsumeComma()
-	return x
-}
-
-func (p *parser) parseWireType() (x ast.Expr) {
-	if p.trace {
-		defer un(trace(p, "WireType"))
-	}
-	defer p.tryConsumeComma()
-	if p.tok == token.COMMA || p.tok == token.RBRACK {
-		return nil
-	}
-	return p.tryIdentOrInt()
-}
-
-func (p *parser) parseWireEndian() binary.ByteOrder {
-	if p.trace {
-		defer un(trace(p, "WireEndian"))
-	}
-	defer p.tryConsumeComma()
-	if p.tok == token.COMMA || p.tok == token.RBRACK {
-		return nil
-	}
-	x := p.parseIdent()
-	switch {
-	case x == nil:
-		p.error(p.pos, fmt.Sprintf("endian set to empty string"))
-		return nil
-	case x.Name == "BE":
-		return binary.BigEndian
-	case x.Name == "LE":
-		return binary.LittleEndian
-	case x.Name == "":
-		return binary.LittleEndian
-	}
-	p.error(p.pos, fmt.Sprintf(`endian must be "LE" or "BE got %s"`, x.Name))
-	return nil
 }

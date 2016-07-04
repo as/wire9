@@ -1,0 +1,366 @@
+//
+// Source
+//
+
+package main
+
+import "fmt"
+import "runtime"
+
+type Some struct {
+	name string
+}
+
+func main() {
+	fmt.Println("hello world")
+	runtime.Gosched()
+}
+
+//
+// Tokens
+//
+
+token.PACKAGE token.IDENT
+
+token.IMPORT token.STRING
+token.IMPORT token.STRING
+
+token.TYPE token.IDENT token.STRUCT token.LBRACE
+	token.IDENT token.IDENT 
+token.RBRACE
+
+token.FUNC token.IDENT token.LPAREN token.RPAREN token.LBRACE
+	token.IDENT token.DOT token.IDENT token.LPAREN token.STRING token.RPAREN
+	token.IDENT token.DOT token.IDENT token.LPAREN token.RPAREN
+token.RBRACE
+
+//
+// AST
+//
+
+ &ast.File{
+		Name:    &ast.Ident{Name: "main"},
+		Decls: []ast.Decl{
+			&ast.GenDecl{
+				Tok:    token.IMPORT,
+				Specs: []ast.Spec{
+					&ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: "\"fmt\""}},
+				},
+			},
+			&ast.GenDecl{
+				Tok:    token.IMPORT,
+				Specs: []ast.Spec{
+					&ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: "\"runtime\""}},
+				},
+			},
+			&ast.GenDecl{
+				Tok:    token.TYPE,
+				Specs: []ast.Spec{
+					&ast.TypeSpec{
+						Name: &ast.Ident{
+							Name:    "Some",
+							Obj: &ast.Object{
+								Kind: ast.Typ,
+								Name: "Some",
+							},
+						},
+						Type: &ast.StructType{
+							Fields: &ast.FieldList{
+								List: []*ast.Field{
+									{
+										Names: []*ast.Ident{&ast.Ident{Name: "name", Obj: &ast.Object{Kind: ast.Var, Name: "name"}}}, 
+										Type:  &ast.Ident{Name: "string"},
+									},
+								},
+							},
+							Incomplete: false,
+						},
+					},
+				},
+			},
+			&ast.FuncDecl{
+				Name: &ast.Ident{Name: "main", Obj: &ast.Object{Kind: ast.Fun, Name: "main"}}, 
+				Type: &ast.FuncType{Params: &ast.FieldList{}},
+				Body: &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.ExprStmt{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   &ast.Ident{Name: "fmt"},
+									Sel: &ast.Ident{Name: "Println"},
+								},
+								Args:     []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: "\"hello world\""}},
+								Ellipsis: 0,
+							},
+						},
+						&ast.ExprStmt{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   &ast.Ident{Name: "runtime"},
+									Sel: &ast.Ident{Name: "Gosched"},
+								},
+								Args:     []ast.Expr{},
+								Ellipsis: 0,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+//
+// SSA IR
+//
+
+# Name: main.init
+# Package: main
+# Synthetic: package initializer
+func init():
+0:                                                                entry P:0 S:2
+	t0 = *init$guard                                                   bool
+	if t0 goto 2 else 1
+1:                                                           init.start P:1 S:1
+	*init$guard = true:bool
+	t1 = fmt.init()                                                      ()
+	t2 = runtime.init()                                                  ()
+	jump 2
+2:                                                            init.done P:2 S:0
+	return
+
+# Name: main.main
+# Package: main
+# Location: /usr/as/wire9/cmd/synth.go:1:79
+func main():
+0:                                                                entry P:0 S:0
+	t0 = new [1]interface{} (varargs)                       *[1]interface{}
+	t1 = &t0[0:int]                                            *interface{}
+	t2 = make interface{} <- string ("hello world":string)      interface{}
+	*t1 = t2
+	t3 = slice t0[:]                                          []interface{}
+	t4 = fmt.Println(t3...)                              (n int, err error)
+	t5 = runtime.Gosched()                                               ()
+	return
+
+//
+// Assembly
+//
+
+"".main t=1 size=192 args=0x0 locals=0x58
+	0x0000 00000 (tour2.go:10)	TEXT	"".main(SB), $88-0
+	0x0000 00000 (tour2.go:10)	MOVQ	TLS, CX
+	0x0007 00007 (tour2.go:10)	MOVQ	(CX)(TLS*2), CX
+	0x000e 00014 (tour2.go:10)	CMPQ	SP, 16(CX)
+	0x0012 00018 (tour2.go:10)	JLS	179
+	0x0018 00024 (tour2.go:10)	SUBQ	$88, SP
+	0x001c 00028 (tour2.go:10)	MOVQ	BP, 80(SP)
+	0x0021 00033 (tour2.go:10)	LEAQ	80(SP), BP
+	0x0026 00038 (tour2.go:10)	FUNCDATA	$0, gclocals·7d2d5fca80364273fb07d5820a76fef4(SB)
+	0x0026 00038 (tour2.go:10)	FUNCDATA	$1, gclocals·40c476148ff75417fb4f45c630a69d4d(SB)
+	0x0026 00038 (tour2.go:11)	LEAQ	go.string."hello world"(SB), AX
+	0x002d 00045 (tour2.go:11)	MOVQ	AX, "".autotmp_0+64(SP)
+	0x0032 00050 (tour2.go:11)	MOVQ	$11, "".autotmp_0+72(SP)
+	0x003b 00059 (tour2.go:11)	MOVQ	$0, "".autotmp_4+48(SP)
+	0x0044 00068 (tour2.go:11)	MOVQ	$0, "".autotmp_4+56(SP)
+	0x004d 00077 (tour2.go:11)	LEAQ	type.string(SB), AX
+	0x0054 00084 (tour2.go:11)	MOVQ	AX, (SP)
+	0x0058 00088 (tour2.go:11)	LEAQ	"".autotmp_0+64(SP), AX
+	0x005d 00093 (tour2.go:11)	MOVQ	AX, 8(SP)
+	0x0062 00098 (tour2.go:11)	MOVQ	$0, 16(SP)
+	0x006b 00107 (tour2.go:11)	PCDATA	$0, $1
+	0x006b 00107 (tour2.go:11)	CALL	runtime.convT2E(SB)
+	0x0070 00112 (tour2.go:11)	MOVQ	32(SP), AX
+	0x0075 00117 (tour2.go:11)	MOVQ	24(SP), CX
+	0x007a 00122 (tour2.go:11)	MOVQ	CX, "".autotmp_4+48(SP)
+	0x007f 00127 (tour2.go:11)	MOVQ	AX, "".autotmp_4+56(SP)
+	0x0084 00132 (tour2.go:11)	LEAQ	"".autotmp_4+48(SP), AX
+	0x0089 00137 (tour2.go:11)	MOVQ	AX, (SP)
+	0x008d 00141 (tour2.go:11)	MOVQ	$1, 8(SP)
+	0x0096 00150 (tour2.go:11)	MOVQ	$1, 16(SP)
+	0x009f 00159 (tour2.go:11)	PCDATA	$0, $1
+	0x009f 00159 (tour2.go:11)	CALL	fmt.Println(SB)
+	0x00a4 00164 (tour2.go:12)	PCDATA	$0, $2
+	0x00a4 00164 (tour2.go:12)	CALL	runtime.Gosched(SB)
+	0x00a9 00169 (tour2.go:13)	MOVQ	80(SP), BP
+	0x00ae 00174 (tour2.go:13)	ADDQ	$88, SP
+	0x00b2 00178 (tour2.go:13)	RET
+	0x00b3 00179 (tour2.go:13)	NOP
+	0x00b3 00179 (tour2.go:10)	CALL	runtime.morestack_noctxt(SB)
+	0x00b8 00184 (tour2.go:10)	JMP	0
+	0x0000 48 8b 0d 00 00 00 00 48 8b 89 00 00 00 00 48 3b  H......H......H;
+	0x0010 61 10 0f 86 9b 00 00 00 48 83 ec 58 48 89 6c 24  a.......H..XH.l$
+	0x0020 50 48 8d 6c 24 50 48 8d 05 00 00 00 00 48 89 44  PH.l$PH......H.D
+	0x0030 24 40 48 c7 44 24 48 0b 00 00 00 48 c7 44 24 30  $@H.D$H....H.D$0
+	0x0040 00 00 00 00 48 c7 44 24 38 00 00 00 00 48 8d 05  ....H.D$8....H..
+	0x0050 00 00 00 00 48 89 04 24 48 8d 44 24 40 48 89 44  ....H..$H.D$@H.D
+	0x0060 24 08 48 c7 44 24 10 00 00 00 00 e8 00 00 00 00  $.H.D$..........
+	0x0070 48 8b 44 24 20 48 8b 4c 24 18 48 89 4c 24 30 48  H.D$ H.L$.H.L$0H
+	0x0080 89 44 24 38 48 8d 44 24 30 48 89 04 24 48 c7 44  .D$8H.D$0H..$H.D
+	0x0090 24 08 01 00 00 00 48 c7 44 24 10 01 00 00 00 e8  $.....H.D$......
+	0x00a0 00 00 00 00 e8 00 00 00 00 48 8b 6c 24 50 48 83  .........H.l$PH.
+	0x00b0 c4 58 c3 e8 00 00 00 00 e9 43 ff ff ff cc cc cc  .X.......C......
+	rel 3+4 t=14 _privates+0
+	rel 10+4 t=15 TLS+0
+	rel 41+4 t=14 go.string."hello world"+0
+	rel 80+4 t=14 type.string+0
+	rel 108+4 t=7 runtime.convT2E+0
+	rel 160+4 t=7 fmt.Println+0
+	rel 165+4 t=7 runtime.Gosched+0
+	rel 180+4 t=7 runtime.morestack_noctxt+0
+"".init t=1 size=80 args=0x0 locals=0x0
+	0x0000 00000 (tour2.go:14)	TEXT	"".init(SB), $0-0
+	0x0000 00000 (tour2.go:14)	MOVQ	TLS, CX
+	0x0007 00007 (tour2.go:14)	MOVQ	(CX)(TLS*2), CX
+	0x000e 00014 (tour2.go:14)	CMPQ	SP, 16(CX)
+	0x0012 00018 (tour2.go:14)	JLS	64
+	0x0014 00020 (tour2.go:14)	NOP
+	0x0014 00020 (tour2.go:14)	NOP
+	0x0014 00020 (tour2.go:14)	FUNCDATA	$0, gclocals·33cdeccccebe80329f1fdbee7f5874cb(SB)
+	0x0014 00020 (tour2.go:14)	FUNCDATA	$1, gclocals·33cdeccccebe80329f1fdbee7f5874cb(SB)
+	0x0014 00020 (tour2.go:14)	MOVBLZX	"".initdone·(SB), AX
+	0x001b 00027 (tour2.go:14)	CMPB	AL, $1
+	0x001d 00029 (tour2.go:14)	JLS	$0, 32
+	0x001f 00031 (tour2.go:14)	RET
+	0x0020 00032 (tour2.go:14)	JNE	$0, 39
+	0x0022 00034 (tour2.go:14)	PCDATA	$0, $0
+	0x0022 00034 (tour2.go:14)	CALL	runtime.throwinit(SB)
+	0x0027 00039 (tour2.go:14)	MOVB	$1, "".initdone·(SB)
+	0x002e 00046 (tour2.go:14)	PCDATA	$0, $0
+	0x002e 00046 (tour2.go:14)	CALL	fmt.init(SB)
+	0x0033 00051 (tour2.go:14)	PCDATA	$0, $0
+	0x0033 00051 (tour2.go:14)	CALL	runtime.init(SB)
+	0x0038 00056 (tour2.go:14)	MOVB	$2, "".initdone·(SB)
+	0x003f 00063 (tour2.go:14)	RET
+	0x0040 00064 (tour2.go:14)	NOP
+	0x0040 00064 (tour2.go:14)	CALL	runtime.morestack_noctxt(SB)
+	0x0045 00069 (tour2.go:14)	JMP	0
+	0x0000 48 8b 0d 00 00 00 00 48 8b 89 00 00 00 00 48 3b  H......H......H;
+	0x0010 61 10 76 2c 0f b6 05 00 00 00 00 3c 01 76 01 c3  a.v,.......<.v..
+	0x0020 75 05 e8 00 00 00 00 c6 05 00 00 00 00 01 e8 00  u...............
+	0x0030 00 00 00 e8 00 00 00 00 c6 05 00 00 00 00 02 c3  ................
+	0x0040 e8 00 00 00 00 eb b9 cc cc cc cc cc cc cc cc cc  ................
+	rel 3+4 t=14 _privates+0
+	rel 10+4 t=15 TLS+0
+	rel 23+4 t=14 "".initdone·+0
+	rel 35+4 t=7 runtime.throwinit+0
+	rel 41+4 t=14 "".initdone·+-1
+	rel 47+4 t=7 fmt.init+0
+	rel 52+4 t=7 runtime.init+0
+	rel 58+4 t=14 "".initdone·+-1
+	rel 65+4 t=7 runtime.morestack_noctxt+0
+go.string.hdr."hello world" t=9 dupok size=16
+	0x0000 00 00 00 00 00 00 00 00 0b 00 00 00 00 00 00 00  ................
+	rel 0+8 t=1 go.string."hello world"+0
+go.string."hello world" t=9 dupok size=11
+	0x0000 68 65 6c 6c 6f 20 77 6f 72 6c 64                 hello world
+gclocals·40c476148ff75417fb4f45c630a69d4d t=9 dupok size=20
+	0x0000 03 00 00 00 04 00 00 00 00 00 00 00 07 00 00 00  ................
+	0x0010 03 00 00 00                                      ....
+gclocals·7d2d5fca80364273fb07d5820a76fef4 t=9 dupok size=8
+	0x0000 03 00 00 00 00 00 00 00                          ........
+gclocals·33cdeccccebe80329f1fdbee7f5874cb t=9 dupok size=8
+	0x0000 01 00 00 00 00 00 00 00                          ........
+"".initdone· t=34 size=1
+"".main·f t=9 dupok size=8
+	0x0000 00 00 00 00 00 00 00 00                          ........
+	rel 0+8 t=1 "".main+0
+"".init·f t=9 dupok size=8
+	0x0000 00 00 00 00 00 00 00 00                          ........
+	rel 0+8 t=1 "".init+0
+runtime.gcbits.03 t=9 dupok size=1
+	0x0000 03                                               .
+type..namedata.*interface {}. t=9 dupok size=16
+	0x0000 00 00 0d 2a 69 6e 74 65 72 66 61 63 65 20 7b 7d  ...*interface {}
+type.interface {} t=9 dupok size=80
+	0x0000 10 00 00 00 00 00 00 00 10 00 00 00 00 00 00 00  ................
+	0x0010 e7 57 a0 18 02 08 08 14 00 00 00 00 00 00 00 00  .W..............
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0040 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	rel 24+8 t=1 runtime.algarray+144
+	rel 32+8 t=1 runtime.gcbits.03+0
+	rel 40+4 t=5 type..namedata.*interface {}.+0
+	rel 56+8 t=1 type.interface {}+80
+runtime.gcbits.01 t=9 dupok size=1
+	0x0000 01                                               .
+type..namedata.*[]interface {}. t=9 dupok size=18
+	0x0000 00 00 0f 2a 5b 5d 69 6e 74 65 72 66 61 63 65 20  ...*[]interface 
+	0x0010 7b 7d                                            {}
+type.[]interface {} t=9 dupok size=56
+	0x0000 18 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00  ................
+	0x0010 70 93 ea 2f 02 08 08 17 00 00 00 00 00 00 00 00  p../............
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00                          ........
+	rel 24+8 t=1 runtime.algarray+0
+	rel 32+8 t=1 runtime.gcbits.01+0
+	rel 40+4 t=5 type..namedata.*[]interface {}.+0
+	rel 48+8 t=1 type.interface {}+0
+go.typelink.[]interface {} t=9 dupok size=4
+	0x0000 00 00 00 00                                      ....
+	rel 0+4 t=5 type.[]interface {}+0
+type..namedata.*[1]interface {}. t=9 dupok size=19
+	0x0000 00 00 10 2a 5b 31 5d 69 6e 74 65 72 66 61 63 65  ...*[1]interface
+	0x0010 20 7b 7d                                          {}
+type.[1]interface {} t=9 dupok size=72
+	0x0000 10 00 00 00 00 00 00 00 10 00 00 00 00 00 00 00  ................
+	0x0010 50 91 5b fa 02 08 08 11 00 00 00 00 00 00 00 00  P.[.............
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0040 01 00 00 00 00 00 00 00                          ........
+	rel 24+8 t=1 runtime.algarray+144
+	rel 32+8 t=1 runtime.gcbits.03+0
+	rel 40+4 t=5 type..namedata.*[1]interface {}.+0
+	rel 48+8 t=1 type.interface {}+0
+	rel 56+8 t=1 type.[]interface {}+0
+go.typelink.[1]interface {} t=9 dupok size=4
+	0x0000 00 00 00 00                                      ....
+	rel 0+4 t=5 type.[1]interface {}+0
+type.*[1]interface {} t=9 dupok size=56
+	0x0000 08 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00  ................
+	0x0010 bf 03 a8 35 00 08 08 36 00 00 00 00 00 00 00 00  ...5...6........
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00                          ........
+	rel 24+8 t=1 runtime.algarray+80
+	rel 32+8 t=1 runtime.gcbits.01+0
+	rel 40+4 t=5 type..namedata.*[1]interface {}.+0
+	rel 48+8 t=1 type.[1]interface {}+0
+go.typelink.*[1]interface {} t=9 dupok size=4
+	0x0000 00 00 00 00                                      ....
+	rel 0+4 t=5 type.*[1]interface {}+0
+type..namedata.*main.Some. t=9 dupok size=13
+	0x0000 01 00 0a 2a 6d 61 69 6e 2e 53 6f 6d 65           ...*main.Some
+type.*"".Some t=9 size=56
+	0x0000 08 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00  ................
+	0x0010 14 16 35 54 00 08 08 36 00 00 00 00 00 00 00 00  ..5T...6........
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00                          ........
+	rel 24+8 t=1 runtime.algarray+80
+	rel 32+8 t=1 runtime.gcbits.01+0
+	rel 40+4 t=5 type..namedata.*main.Some.+0
+	rel 48+8 t=1 type."".Some+0
+go.typelink.*"".Some t=9 size=4
+	0x0000 00 00 00 00                                      ....
+	rel 0+4 t=5 type.*"".Some+0
+type..namedata.name. t=9 dupok size=7
+	0x0000 00 00 04 6e 61 6d 65                             ...name
+type."".Some t=9 size=112
+	0x0000 10 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00  ................
+	0x0010 8f f7 0a 1e 03 08 08 19 00 00 00 00 00 00 00 00  ................
+	0x0020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	0x0040 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00  ................
+	0x0050 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00  ...... .........
+	0x0060 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+	rel 0+0 t=22 type.*"".Some+0
+	rel 24+8 t=1 runtime.algarray+112
+	rel 32+8 t=1 runtime.gcbits.01+0
+	rel 40+4 t=5 type..namedata.*main.Some.+0
+	rel 48+8 t=1 type..importpath."".+0
+	rel 56+8 t=1 type."".Some+88
+	rel 80+4 t=5 type..importpath."".+0
+	rel 88+8 t=1 type..namedata.name.+0
+	rel 96+8 t=1 type.string+0
+type..importpath.fmt. t=9 dupok size=6
+	0x0000 00 00 03 66 6d 74                                ...fmt
+type..importpath.runtime. t=9 dupok size=10
+	0x0000 00 00 07 72 75 6e 74 69 6d 65                    ...runtime
