@@ -1,10 +1,10 @@
-# wire9
+# Wire9
 Protocol Boilerplate Generator
 
-# install
+# Install
 Build wire9/cmd
 
-# definitions
+# Wire Definitions
 wire definitions are defined with a comment starting with '//wire9'
 ```
 //wire9 TypeName MemberName[Width,Type,Endian] ...
