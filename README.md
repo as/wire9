@@ -16,9 +16,11 @@ wire definitions are defined with a comment starting with '//wire9'
 
 At least one Width or Type must be defined per member. Endianness defaults to LE (little-endian).
 
-# Example 1
-Conformant type Length prefixed string. Members preceeding other members
-in wire definitions may indicate the width of the members it preceeds.
+# Example 1: Conformant types
+A conformant type is a type that is described by the value of another type, usually this type
+is an aggregate (i.e., a slice) and conforms to the length specified by a preceeding value.
+
+Members preceeding other members in wire definitions may indicate the width of the members they preceed.
 ```
 package main
 
