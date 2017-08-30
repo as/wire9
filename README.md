@@ -22,7 +22,7 @@ in wire definitions may indicate the width of the members it preceeds.
 ```
 package main
 
-// bstr n[4] data[n]
+//wire9  bstr n[4] data[n]
 
 go:generate wire9 -f main_wire9.go .
 
@@ -41,8 +41,8 @@ A batch request (two conformant types)
 ```
 package main
 
-// bstr  n[4] data[n]
-// batch n[4] strings[n,[]bstr]
+//wire9 bstr  n[4] data[n]
+//wire9 batch n[4] strings[n,[]bstr]
 
 go:generate wire9 -f main_wire9.go .
 
