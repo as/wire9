@@ -1,6 +1,14 @@
 # Wire9
 Protocol Boilerplate Generator
 
+# Overview
+- Build & Install
+- Write wire definitions
+- Run wire9 executable
+  - Generates structs
+  - Generates ReadBinary and WriteBinary implementations
+
+
 # Install
 Build wire9/cmd
 
