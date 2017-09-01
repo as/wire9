@@ -10,7 +10,9 @@ Protocol Boilerplate Generator
 
 
 # Install
-Build wire9/cmd
+Build wire9/wire9
+
+```wire9 -f output_wire9.go (packagename | .)```
 
 # Wire Definitions
 wire definitions are defined with a comment starting with '//wire9'
