@@ -18,7 +18,7 @@ name and a variadic list of fields.
 
 	//wire9 struct⁰ field⁰[width,type,endian] ... fieldⁿ[width,type,endian]
 
-A field becomes the name of a struct field. Next, a [bracket-enclosed], 
+A field becomes the name of a struct field. Next, a [bracket-enclosed],
 comma-seperated list of field options: width, type, and endian.
 
 	field⁰[width,type,endian]
@@ -45,22 +45,22 @@ other values in the field options:
 
 	2. Width is identifier
 		A. Type is empty: Type is implicitly []byte. The width represents the number
-		   of bytes to expect in the slice. 
-           
+		   of bytes to expect in the slice.
+
 		B. Type is identifier: The type represents a slice type. The width is
 		   the number of expected elements in the slice.
-		
+
 	3. Width is empty
 		A. Type is a fixed-width struct, number, or implements the Wire interface.
 
 	Examples:
-	
+
 	//wire9 Ex1A Time[8]        IP[4]        Port[2]         n[1]
 	//wire9 Ex1B Time[8,uint64] IP[4,uint32] Port[2,uint16]  n[1,byte]
-	
+
 	//wire9 Ex2A n[1]  URL[n]
 	//wire9 Ex2B n[1]  URL[n,[]byte]
-	
+
 	//wire9 Ex3A p[,image.Point]  size[,int64]  reply[,Ex2A]
 
 	//wire9 Git index[4,,BE] ...
